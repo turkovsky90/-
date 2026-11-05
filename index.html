@@ -38,17 +38,10 @@
             opacity: 1; /* Firefox по умолчанию снижает opacity */
         }
 
-        /* 2.4.7: видимый индикатор фокуса для клавиатуры */
+        /* 2.4.7: единый индикатор фокуса — только смена цвета рамки, без второго контура */
+        .input-field:focus,
         .input-field:focus-visible {
-            outline: 2px solid #00aaff;
-            outline-offset: 2px;
-            border-color: #aaa;
-        }
-
-        /* Для браузеров без :focus-visible — оставляем заметный outline при фокусе */
-        .input-field:focus {
-            outline: 2px solid #00aaff;
-            outline-offset: 2px;
+            border-color: #00aaff;
         }
 
         .hint {
