@@ -9,13 +9,13 @@
 <link rel="icon" type="image/svg+xml"
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='96' fill='%23111'/%3E%3Ctext x='256' y='360' font-family='system-ui,sans-serif' font-size='240' font-weight='700' fill='%2300aaff' text-anchor='middle'%3E%D0%AFa%3C/text%3E%3C/svg%3E">
 
-<!-- Иконка при добавлении на домашний экран iOS -->
+<!-- Иконка при добавлении на домашний экран iOS (перезапишется PNG из JS) -->
 <link rel="apple-touch-icon"
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='96' fill='%23111'/%3E%3Ctext x='256' y='360' font-family='system-ui,sans-serif' font-size='240' font-weight='700' fill='%2300aaff' text-anchor='middle'%3E%D0%AFa%3C/text%3E%3C/svg%3E">
 
 <meta name="theme-color" content="#111111">
 
-<!-- Манифест подставится из JS как data-URI -->
+<!-- Манифест подставится из JS -->
 <link id="pwa-manifest" rel="manifest" href="">
 
 <style>
@@ -35,19 +35,6 @@
     position: relative;
   }
 
-  body::before {
-    content: "";
-    position: fixed;
-    inset: 0;
-    pointer-events: none;
-    z-index: 0;
-    background-size: 48px 48px;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='48'%3E%3Cg stroke='%23252525' stroke-width='1' stroke-linecap='round'%3E%3Cline x1='24' y1='19' x2='24' y2='29'/%3E%3Cline x1='19' y1='24' x2='29' y2='24'/%3E%3C/g%3E%3C/svg%3E");
-  }
-  body.is-focused::before {
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='48'%3E%3Cg stroke='%233a3a3a' stroke-width='1' stroke-linecap='round'%3E%3Cline x1='24' y1='19' x2='24' y2='29'/%3E%3Cline x1='19' y1='24' x2='29' y2='24'/%3E%3C/g%3E%3C/svg%3E");
-  }
-
   .container {
     position: relative;
     z-index: 1;
@@ -60,7 +47,8 @@
     display: block;
     width: 100%;
     padding: 18px 16px;
-    font-size: clamp(1.5rem, 4vw, 3rem);
+    /* было clamp(1.5rem, 4vw, 3rem) — уменьшено в 1.25 раза */
+    font-size: clamp(1.2rem, 3.2vw, 2.4rem);
     font-family: inherit;
     font-weight: 600;
     letter-spacing: 0.01em;
@@ -116,34 +104,82 @@
 
 <script>
 (function () {
-  /* ---------- PWA manifest (data URI, без внешних файлов) ---------- */
-  const iconSvg =
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">' +
-      '<rect width="512" height="512" rx="96" fill="#111"/>' +
-      '<text x="256" y="360" font-family="system-ui,sans-serif" ' +
-            'font-size="240" font-weight="700" fill="#00aaff" ' +
-            'text-anchor="middle">Яa</text>' +
-    '</svg>';
-  const iconData = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(iconSvg);
+  /* ---------- PWA: PNG-иконки через canvas + blob-URL ---------- */
+  (async function setupPwa() {
+    const iconSvg =
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">' +
+        '<rect width="512" height="512" rx="96" fill="#111"/>' +
+        '<text x="256" y="360" font-family="system-ui,sans-serif" ' +
+              'font-size="240" font-weight="700" fill="#00aaff" ' +
+              'text-anchor="middle">Яa</text>' +
+      '</svg>';
+    const svgUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(iconSvg);
 
-  const baseUrl = new URL('.', window.location.href).href;
-  const manifest = {
-    name: "Конвертер раскладки",
-    short_name: "Раскладка",
-    start_url: window.location.href,
-    scope: baseUrl,
-    display: "standalone",
-    background_color: "#111111",
-    theme_color: "#111111",
-    icons: [
-      { src: iconData, sizes: "any", type: "image/svg+xml", purpose: "any" },
-      { src: iconData, sizes: "any", type: "image/svg+xml", purpose: "maskable" }
-    ]
-  };
-  const manifestData =
-    'data:application/manifest+json;charset=utf-8,' +
-    encodeURIComponent(JSON.stringify(manifest));
-  document.getElementById('pwa-manifest').href = manifestData;
+    const img = new Image();
+    img.src = svgUrl;
+    try { await img.decode(); } catch (e) { /* на всякий случай */ }
+
+    function renderPngBlobUrl(size, maskable) {
+      const canvas = document.createElement('canvas');
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d');
+      if (maskable) {
+        // безопасная зона maskable: контент в пределах ~80%
+        ctx.fillStyle = '#111';
+        ctx.fillRect(0, 0, size, size);
+        const pad = size * 0.1;
+        ctx.drawImage(img, pad, pad, size - pad * 2, size - pad * 2);
+      } else {
+        ctx.drawImage(img, 0, 0, size, size);
+      }
+      return new Promise((resolve) => {
+        canvas.toBlob((blob) => resolve(URL.createObjectURL(blob)), 'image/png');
+      });
+    }
+
+    function renderPngDataUrl(size) {
+      const canvas = document.createElement('canvas');
+      canvas.width = size;
+      canvas.height = size;
+      canvas.getContext('2d').drawImage(img, 0, 0, size, size);
+      return canvas.toDataURL('image/png');
+    }
+
+    const [i192, i512, i512mask] = await Promise.all([
+      renderPngBlobUrl(192, false),
+      renderPngBlobUrl(512, false),
+      renderPngBlobUrl(512, true)
+    ]);
+    // Держим ссылки, чтобы GC не прибил blob-URL'ы
+    window.__pwaRefs = [i192, i512, i512mask];
+
+    // iOS: apple-touch-icon должен быть PNG
+    try {
+      const appleLink = document.querySelector('link[rel="apple-touch-icon"]');
+      if (appleLink) appleLink.href = renderPngDataUrl(180);
+    } catch (e) {}
+
+    const baseUrl = new URL('.', window.location.href).href;
+    const manifest = {
+      name: "Конвертер раскладки",
+      short_name: "Раскладка",
+      start_url: window.location.href,
+      scope: baseUrl,
+      display: "standalone",
+      background_color: "#111111",
+      theme_color: "#111111",
+      icons: [
+        { src: i192,     sizes: "192x192", type: "image/png", purpose: "any" },
+        { src: i512,     sizes: "512x512", type: "image/png", purpose: "any" },
+        { src: i512mask, sizes: "512x512", type: "image/png", purpose: "maskable" }
+      ]
+    };
+    const manifestData =
+      'data:application/manifest+json;charset=utf-8,' +
+      encodeURIComponent(JSON.stringify(manifest));
+    document.getElementById('pwa-manifest').href = manifestData;
+  })();
 
   /* ---------- Логика конвертера ---------- */
   const pairs = [
@@ -164,6 +200,13 @@
   for (const [en, ru] of pairs) {
     enToRu[en] = ru;
     ruToEn[ru] = en;
+    // Добавляем заглавные пары для настоящих букв (q↔й → Q↔Й и т.п.)
+    const enU = en.toUpperCase();
+    const ruU = ru.toUpperCase();
+    if (enU !== en && ruU !== ru) {
+      enToRu[enU] = ruU;
+      ruToEn[ruU] = enU;
+    }
   }
 
   function convertText(text) {
@@ -216,9 +259,6 @@
     }
   });
 
-  input.addEventListener('focus', () => document.body.classList.add('is-focused'));
-  input.addEventListener('blur',  () => document.body.classList.remove('is-focused'));
-
   input.addEventListener('click', () => {
     input.value = '';
     input.select();
@@ -228,10 +268,6 @@
     if (e.target === input) return;
     input.focus();
   });
-
-  if (document.activeElement === input) {
-    document.body.classList.add('is-focused');
-  }
 })();
 </script>
 
